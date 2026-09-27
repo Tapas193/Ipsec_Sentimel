@@ -1,0 +1,9 @@
+# Keep the frontend build context small (multi-arch amd64/arm64).
+node_modules/
+dist/
+.vite/
+.git/
+.gitignore
+*.tsbuildinfo
+Dockerfile
+nginx.conf

@@ -1,0 +1,19 @@
+# Keep the backend image small: exclude everything not needed at runtime.
+# The image is build for any platform (amd64 / arm64) — never copy in host
+# architecture-specific artifacts.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+.git/
+.gitignore
+*.db
+*.sqlite3
+data/
+Dockerfile

@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipsec-sentinel-backend"
+version = "0.1.0"
+description = "IPsec Sentinel — AI-Powered IPsec VPN Protocol Analyzer & Security Assessment Framework (backend)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+    "email-validator>=2.2",
+    "scapy>=2.5.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Tool versions are bounded on both sides on purpose: ruff and mypy change
+# formatting/strictness behaviour between minor releases, so an open-ended
+# floor silently breaks `make lint` / `make typecheck` on a fresh install.
+# These ranges are the ones the quality gates were last verified against.
+dev = [
+    "pytest>=8.2,<10",
+    "httpx>=0.27",
+    "ruff>=0.16,<0.17",
+    "mypy>=2.3,<3",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true

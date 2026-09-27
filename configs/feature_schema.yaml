@@ -1,0 +1,70 @@
+# Feature Schema — IPsec Sentinel (Phase 2)
+# Version: 1.0  (settings.FEATURE_SCHEMA_VERSION)
+#
+# One feature record is stored per flow in `flow_features.features`
+# (column `feature_json`). Computed by
+# `backend/app/analyzers/packet_analyzer/feature_extractor.py`.
+#
+# Honesty rules:
+#   - `null` means "not computable for this flow" (e.g. no interarrival sample).
+#   - A value is NEVER guessed. Undecodable inputs yield `null` or `unknown`.
+
+version: "1.0"
+scope: per-flow descriptive statistics
+source:
+  - packet capture (parsed frames, not decrypted payloads)
+  - flow reconstruction (bidirectional, keyed by endpoints + protocol)
+
+features:
+  # --- basic counts ---
+  packet_count:            {type: int,      min: 0}
+  byte_count:              {type: int,      min: 0}
+  duration_seconds:        {type: float,    min: 0}
+
+  # --- rates ---
+  packets_per_second:      {type: float-or-null, min: 0}
+  bytes_per_second:        {type: float-or-null, min: 0}
+
+  # --- packet size (bytes) ---
+  packet_size_mean:        {type: float-or-null, min: 0}
+  packet_size_median:      {type: float-or-null, min: 0}
+  packet_size_std:         {type: float-or-null, min: 0}
+  packet_size_min:         {type: int-or-null,   min: 0}
+  packet_size_max:         {type: int-or-null,   min: 0}
+  packet_size_p25:         {type: float-or-null, min: 0}
+  packet_size_p75:         {type: float-or-null, min: 0}
+
+  # --- interarrival time (seconds) ---
+  interarrival_mean:       {type: float-or-null, min: 0}
+  interarrival_median:     {type: float-or-null, min: 0}
+  interarrival_std:        {type: float-or-null, min: 0}
+  interarrival_min:        {type: float-or-null, min: 0}
+  interarrival_max:        {type: float-or-null, min: 0}
+
+  # --- directionality ---
+  upstream_packets:        {type: int, min: 0}
+  downstream_packets:      {type: int, min: 0}
+  upstream_bytes:          {type: int, min: 0}
+  downstream_bytes:        {type: int, min: 0}
+  direction_ratio:         {type: float-or-null, min: 0, max: 1}  # upstream/total
+
+  # --- bursts (window: 0.1 s) ---
+  burst_count:             {type: float, min: 0}
+  burst_packets_ratio:     {type: float, min: 0, max: 1}
+  burst_mean_size:         {type: float, min: 0}
+  burst_max_size:          {type: float, min: 0}
+  burst_mean_duration:     {type: float, min: 0}
+
+  # --- histogram (array of buckets) ---
+  packet_size_histogram:   {type: array-of-buckets}
+
+histogram_buckets:
+  edges: [0, 64, 256, 1024, 4096, 65536]
+  bucket_shape:
+    range: string     # e.g. "1-64", ">65536"
+    count: int
+    share: float      # 0..1, rounded to 4 dp
+
+notes:
+  - Deterministic: same capture ⇒ identical features (bursts use fixed window).
+  - Built for Phase 3 ML consumption; currently stored as-is with no scoring.

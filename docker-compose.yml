@@ -1,0 +1,69 @@
+# -----------------------------------------------------------------------------
+# IPsec Sentinel — Docker Compose
+#
+# Platform: all images are official multi-arch builds (linux/amd64 + linux/arm64).
+# On Apple Silicon (M1/M2/M3/M4) Compose automatically pulls the linux/arm64
+# variant — no emulation, no x86-only binaries. To force a specific platform,
+# export DOCKER_PLATFORM (e.g. `export DOCKER_PLATFORM=linux/arm64`) and uncomment
+# the `platform:` lines below.
+# -----------------------------------------------------------------------------
+
+name: ipsec-sentinel
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    # platform: ${DOCKER_PLATFORM:-linux/arm64}
+    container_name: ipsec-sentinel-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ipsec_sentinel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ipsec_sentinel_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ipsec_sentinel}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ipsec_sentinel} -d ${POSTGRES_DB:-ipsec_sentinel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    # platform: ${DOCKER_PLATFORM:-linux/arm64}
+    container_name: ipsec-sentinel-backend
+    environment:
+      APP_NAME: ${APP_NAME:-IPsec Sentinel}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ipsec_sentinel}:${POSTGRES_PASSWORD:-ipsec_sentinel_dev_password}@postgres:5432/${POSTGRES_DB:-ipsec_sentinel}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:2456,http://localhost:8080}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/data/uploads}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - uploads_data:/app/data/uploads
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    # platform: ${DOCKER_PLATFORM:-linux/arm64}
+    container_name: ipsec-sentinel-frontend
+    environment:
+      VITE_API_BASE_URL: /api/v1
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  uploads_data:
