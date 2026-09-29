@@ -1,36 +1,73 @@
 import { Badge } from '@/components/ui/badge'
 
-const MAP: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'secondary'> = {
-  valid: 'success',
+type Tone = 'success' | 'warning' | 'danger' | 'info' | 'secondary'
+
+/**
+ * Tone maps are partitioned by semantic domain, not merged into one global
+ * lookup. Severity and confidence intentionally share vocabulary (`high`,
+ * `medium`, `low`) while meaning opposite things: a HIGH severity is dangerous,
+ * a HIGH confidence is reassuring. Keeping them in separate maps is what stops a
+ * HIGH finding from rendering green, and stops HIGH confidence from rendering
+ * red. A new domain gets its own map and an explicit `kind` instead of silently
+ * reusing another domain's tones.
+ */
+
+/** Capture / analysis / finding lifecycle. Operational states only. */
+const TONE_BY_STATUS: Record<string, Tone> = {
   uploaded: 'secondary',
-  analyzing: 'warning',
-  analyzed: 'success',
-  invalid: 'danger',
-  failed: 'danger',
+  queued: 'secondary',
   analyzing_pending: 'secondary',
-  completed: 'success',
+  analyzing: 'warning',
   running: 'warning',
   partial: 'warning',
-  queued: 'secondary',
+  valid: 'success',
+  analyzed: 'success',
+  completed: 'success',
+  failed: 'danger',
+  invalid: 'danger',
+  // Boolean protocol-detection indicator.
   yes: 'success',
   no: 'danger',
-  // Severity
-  critical: 'danger',
-  high: 'success',
-  medium: 'warning',
-  low: 'info',
-  info: 'info',
-  // Finding status
+  // Finding lifecycle.
   open: 'secondary',
   acknowledged: 'warning',
   resolved: 'success',
 }
 
-export function StatusBadge({ value }: { value: string | null | undefined }) {
+/** Backend `Severity` enum (backend/app/models/finding.py). */
+const TONE_BY_SEVERITY: Record<string, Tone> = {
+  critical: 'danger',
+  high: 'danger',
+  medium: 'warning',
+  low: 'info',
+  info: 'secondary',
+  unknown: 'secondary',
+}
+
+/** Backend `FindingConfidence` / protocol-observation confidence. */
+const TONE_BY_CONFIDENCE: Record<string, Tone> = {
+  high: 'success',
+  medium: 'warning',
+  low: 'info',
+  unknown: 'secondary',
+}
+
+function toneFor(value: string, kind: 'status' | 'severity' | 'confidence'): Tone {
+  const key = value.toLowerCase()
+  if (kind === 'severity') return TONE_BY_SEVERITY[key] ?? 'secondary'
+  if (kind === 'confidence') return TONE_BY_CONFIDENCE[key] ?? 'secondary'
+  return TONE_BY_STATUS[key] ?? 'secondary'
+}
+
+export function StatusBadge({
+  value,
+  kind = 'status',
+}: {
+  value: string | null | undefined
+  kind?: 'status' | 'severity' | 'confidence'
+}) {
   if (!value) {
     return <Badge variant="outline">unknown</Badge>
   }
-  return (
-    <Badge variant={MAP[value.toLowerCase()] ?? 'secondary'}>{value}</Badge>
-  )
+  return <Badge variant={toneFor(value, kind)}>{value}</Badge>
 }
