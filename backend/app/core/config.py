@@ -56,7 +56,28 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    @field_validator("UPLOAD_DIR", mode="before")
+    # Machine learning (Phase 4)
+    # ML_ENABLED gates inference. ML_TRAINING_ENABLED gates training, and is
+    # off by default: an uploaded capture must never become training data
+    # implicitly, and labels only ever come from ML_LABEL_FILE.
+    ML_ENABLED: bool = False
+    ML_TRAINING_ENABLED: bool = False
+    ML_MODEL_DIR: str = str((BASE_DIR / "data" / "models").resolve())
+    ML_FEATURE_SCHEMA_PATH: str = str(BASE_DIR.parent / "configs" / "ml_feature_schema.yaml")
+    # Empty means "resolve the newest model compatible with the feature
+    # schema" at inference time.
+    ML_DEFAULT_MODEL_VERSION: str = ""
+    # Maximum predicted probability required to report a class. Below this the
+    # prediction is UNKNOWN with observation_status=MODEL_PREDICTED.
+    ML_MIN_CONFIDENCE: float = 0.60
+    ML_RANDOM_SEED: int = 42
+    ML_DATASET_VERSION: str = "1.0"
+    # Operator-supplied ground-truth file. Empty means "no labeled data", which
+    # makes training report INSUFFICIENT_LABELED_DATA.
+    ML_LABEL_FILE: str = ""
+    ML_MAX_TRAINING_FLOWS: int = 200_000
+
+    @field_validator("UPLOAD_DIR", "ML_MODEL_DIR", mode="before")
     @classmethod
     def _expand_upload_dir(cls, v: str) -> str:
         return os.path.expanduser(v)

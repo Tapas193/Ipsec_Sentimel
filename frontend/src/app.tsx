@@ -9,6 +9,7 @@ import { AnalysisDetailPage } from '@/pages/analysis-detail-page'
 import { FindingsPage } from '@/pages/findings-page'
 import { ReportsPage } from '@/pages/reports-page'
 import { SettingsPage } from '@/pages/settings-page'
+import { TrafficIntelligencePage } from '@/pages/traffic-intelligence-page'
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
         <Route path="analysis" element={<AnalysisPage />} />
         <Route path="analysis/:analysisKey" element={<AnalysisDetailPage />} />
         <Route path="findings" element={<FindingsPage />} />
+        <Route path="traffic" element={<TrafficIntelligencePage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<DashboardPage />} />

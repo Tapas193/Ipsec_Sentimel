@@ -39,6 +39,13 @@ dist/
 data/
 uploads/
 
+# ML model artifacts (Phase 4).
+# Model binaries are build outputs, not source. The registry layout and the
+# feature schema that defines them ARE tracked; only the trained artifact and
+# its evaluation dump are ignored. See docs/ml-reproducibility.md.
+backend/data/models/
+*.joblib
+
 # Docker
 docker-compose.override.yml
  # Environment & secrets

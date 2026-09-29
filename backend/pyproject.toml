@@ -21,6 +21,17 @@ dependencies = [
     "email-validator>=2.2",
     "scapy>=2.5.0",
     "python-multipart>=0.0.9",
+    # Phase 4 ML runtime. These are required rather than an optional extra: the
+    # /ml router is always registered, and /ml/health must answer 200 with an
+    # explicit status so the UI can render "no model" as information. Sourcing
+    # them from an extra would make the ML endpoints 404 instead, which would
+    # turn an honest empty state into a generic failure. `app/ml/schema.py`,
+    # `labels.py` and `validation.py` stay dependency-free on purpose so the
+    # feature contract stays auditable without the numeric stack.
+    "scikit-learn>=1.4",
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "joblib>=1.3",
 ]
 
 [project.optional-dependencies]
@@ -54,4 +65,16 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+ignore_missing_imports = true
+
+# The numeric stack is reached only through pandas/scikit-learn, plus
+# `numpy.__version__` in the environment fingerprint. numpy >= 2.5 ships stubs
+# that use PEP 695 `type` statements, which mypy cannot parse while targeting
+# Python 3.11 (the minimum this project supports). Skipping the numpy stub
+# internals keeps 3.11 as the type-check target instead of silently raising it
+# to 3.12. pandas and scikit-learn are still checked normally.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
 ignore_missing_imports = true

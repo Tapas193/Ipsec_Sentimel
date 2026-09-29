@@ -196,3 +196,109 @@ export function useAssessMutation() {
     },
   })
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4 — ML / traffic classification
+//
+// None of these hooks are `enabled`-gated on a model existing. "No model yet"
+// resolves to HTTP 200 with a status field, so gating on availability would
+// leave the page permanently loading and would hide the explanation.
+// ---------------------------------------------------------------------------
+
+export function useMLHealthQuery() {
+  return useQuery({
+    queryKey: ['ml-health'],
+    queryFn: ({ signal }) => apiClient.mlHealth(signal),
+    retry: 2,
+  })
+}
+
+export function useMLSchemaQuery() {
+  return useQuery({
+    queryKey: ['ml-schema'],
+    queryFn: ({ signal }) => apiClient.mlSchema(signal),
+  })
+}
+
+export function useMLFeaturesQuery() {
+  return useQuery({
+    queryKey: ['ml-features'],
+    queryFn: ({ signal }) => apiClient.mlFeatures(signal),
+  })
+}
+
+export function useMLModelsQuery() {
+  return useQuery({
+    queryKey: ['ml-models'],
+    queryFn: ({ signal }) => apiClient.listModels(signal),
+  })
+}
+
+export function useMLModelMetricsQuery(modelVersion: string | undefined) {
+  return useQuery({
+    queryKey: ['ml-model-metrics', modelVersion],
+    queryFn: ({ signal }) => apiClient.getModelMetrics(modelVersion as string, signal),
+    enabled: Boolean(modelVersion),
+  })
+}
+
+export function useMLDatasetQuery() {
+  return useQuery({
+    queryKey: ['ml-dataset'],
+    queryFn: ({ signal }) => apiClient.mlDataset(signal),
+  })
+}
+
+export function useMLPredictionsQuery(
+  analysisKey: string | undefined,
+  modelVersion?: string,
+) {
+  return useQuery({
+    queryKey: ['ml-predictions', analysisKey, modelVersion ?? null],
+    queryFn: ({ signal }) => apiClient.listPredictions(analysisKey as string, modelVersion, signal),
+    enabled: Boolean(analysisKey),
+  })
+}
+
+export function useMLPredictionHistoryQuery(captureId?: string, limit = 50) {
+  return useQuery({
+    queryKey: ['ml-prediction-history', captureId ?? null, limit],
+    queryFn: ({ signal }) => apiClient.predictionHistory(captureId, limit, signal),
+  })
+}
+
+export function useRunPredictionMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ analysisKey, modelVersion }: { analysisKey: string; modelVersion?: string }) =>
+      apiClient.runPrediction(analysisKey, modelVersion),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ml-predictions'] })
+      void queryClient.invalidateQueries({ queryKey: ['ml-prediction-history'] })
+    },
+  })
+}
+
+export function useDeletePredictionsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (analysisKey: string) => apiClient.deletePredictions(analysisKey),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ml-predictions'] })
+      void queryClient.invalidateQueries({ queryKey: ['ml-prediction-history'] })
+    },
+  })
+}
+
+export function useTrainModelMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body?: { model_version?: string; label_file?: string }) =>
+      apiClient.trainModel(body ?? {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ml-models'] })
+      void queryClient.invalidateQueries({ queryKey: ['ml-health'] })
+      void queryClient.invalidateQueries({ queryKey: ['ml-dataset'] })
+    },
+  })
+}

@@ -1,0 +1,181 @@
+# ML Feature Schema — IPsec Sentinel (Phase 4)
+#
+# Defines the exact contract between the Phase 2 feature store
+# (`flow_features.feature_json`) and any Phase 4 model.
+#
+# Honesty rules (mirroring configs/feature_schema.yaml):
+#   - A feature is only listed here if Phase 2 actually persists it.
+#   - `null` in the feature store means "not computable for this flow".
+#     It is NOT zero and is NOT a guess. See `preprocessing.missing`.
+#   - Labels are never derived from features. See `target.label_sources`.
+#
+# A model records the `feature_schema_version` it was trained against and
+# refuses to score data that does not match it.
+
+dataset_version: "1.0"
+feature_schema_version: "1.0"
+
+# The Phase 2 feature store version this ML schema reads. Rows whose
+# `flow_features.feature_schema_version` differs are rejected, never coerced.
+source_feature_schema_version: "1.0"
+
+target:
+  name: traffic_type
+  # Class labels are stored uppercase so they match the API/UI vocabulary.
+  # UNKNOWN is a first-class class AND the abstention outcome (§13 of the
+  # Phase 4 brief). A flow can be UNKNOWN for two different reasons:
+  #   1. no compatible model exists        -> MODEL_NOT_AVAILABLE
+  #   2. model ran but was not confident   -> prediction=UNKNOWN, status=MODEL_PREDICTED
+  label_sources:
+    # The ONLY legitimate source is an operator-supplied ground-truth file
+    # (ML_LABEL_FILE). Nothing in the pipeline may invent a label: not a port
+    # number, not a filename, not a synthetic generator, not a heuristic.
+    - user_provided
+  provenance_observation_status: USER_PROVIDED
+  forbidden_sources:
+    - port_number_heuristics
+    - filename_or_path_parsing
+    - synthetic_pcap_generation
+    - model_self_labelling
+    - phase3_finding_derivation
+
+class_definition:
+  version: "1.0"
+  # Declared vocabulary. `active` means "a trained model currently supports
+  # this class". Every class is inactive because this repository ships **no
+  # ground-truth labels** — a class may not be activated on the basis of
+  # anything observable in the capture. Phase 2 can see that a flow is ICMP,
+  # but "this flow was ICMP" is not a ground-truth traffic label, and inferring
+  # one from packet metadata would be exactly the circular labelling that
+  # target.forbidden_sources forbids.
+  #
+  # Classes are activated by registering labels and training, never by editing
+  # this file to make a model look supported.
+  classes:
+    - { name: VOIP, active: false, min_samples: 10 }
+    - { name: MESSAGING, active: false, min_samples: 10 }
+    - { name: EMAIL, active: false, min_samples: 10 }
+    - { name: WEB, active: false, min_samples: 10 }
+    - { name: VIDEO, active: false, min_samples: 10 }
+    - { name: ICMP, active: false, min_samples: 10 }
+    - { name: UNKNOWN, active: false, min_samples: 10, note: "abstention class, never a training target" }
+
+# ---------------------------------------------------------------------------
+# Features
+# ---------------------------------------------------------------------------
+# kind:      numeric | categorical
+# nullable:  may be null in flow_features.feature_json
+# unit:      physical unit, documented so the model is auditable
+# min/max:   hard validation bounds. A row outside them is REJECTED, never
+#            clipped, because clipping fabricates a value the capture did not
+#            contain. max: null means unbounded above.
+features:
+  - { name: packet_count,        kind: numeric, unit: packets, nullable: false, min: 0, max: null }
+  - { name: byte_count,          kind: numeric, unit: bytes,   nullable: false, min: 0, max: null }
+  - { name: duration_seconds,    kind: numeric, unit: seconds, nullable: false, min: 0, max: null }
+  - { name: packets_per_second,  kind: numeric, unit: packets/second, nullable: true,  min: 0, max: null }
+  - { name: bytes_per_second,    kind: numeric, unit: bytes/second,   nullable: true,  min: 0, max: null }
+
+  - { name: packet_size_mean,    kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_median,  kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_std,     kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_min,     kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_max,     kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_p25,     kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+  - { name: packet_size_p75,     kind: numeric, unit: bytes, nullable: true, min: 0, max: null }
+
+  - { name: interarrival_mean,   kind: numeric, unit: seconds, nullable: true, min: 0, max: null }
+  - { name: interarrival_median, kind: numeric, unit: seconds, nullable: true, min: 0, max: null }
+  - { name: interarrival_std,    kind: numeric, unit: seconds, nullable: true, min: 0, max: null }
+  - { name: interarrival_min,    kind: numeric, unit: seconds, nullable: true, min: 0, max: null }
+  - { name: interarrival_max,    kind: numeric, unit: seconds, nullable: true, min: 0, max: null }
+
+  - { name: upstream_packets,    kind: numeric, unit: packets, nullable: false, min: 0, max: null }
+  - { name: downstream_packets,  kind: numeric, unit: packets, nullable: false, min: 0, max: null }
+  - { name: upstream_bytes,      kind: numeric, unit: bytes,   nullable: false, min: 0, max: null }
+  - { name: downstream_bytes,    kind: numeric, unit: bytes,   nullable: false, min: 0, max: null }
+  - { name: direction_ratio,     kind: numeric, unit: ratio,   nullable: true,  min: 0, max: 1 }
+
+  - { name: burst_count,         kind: numeric, unit: bursts,  nullable: false, min: 0, max: null }
+  - { name: burst_packets_ratio, kind: numeric, unit: ratio,   nullable: false, min: 0, max: 1 }
+  - { name: burst_mean_size,     kind: numeric, unit: bytes,   nullable: false, min: 0, max: null }
+  - { name: burst_max_size,      kind: numeric, unit: bytes,   nullable: false, min: 0, max: null }
+  - { name: burst_mean_duration, kind: numeric, unit: seconds, nullable: false, min: 0, max: null }
+
+# ---------------------------------------------------------------------------
+# Exclusions
+# ---------------------------------------------------------------------------
+# Anything listed here is a leakage or redundancy risk. The builder asserts the
+# feature list never intersects this set.
+excluded_fields:
+  identifiers_and_provenance:
+    reason: >-
+      Identifiers are unique per row, carry no traffic signal, and let the
+      model memorise a capture instead of learning from it.
+    fields: [id, analysis_id, capture_id, flow_id, flow_key, prediction_id]
+  timestamps:
+    reason: >-
+      Absolute time encodes capture order, capture-window membership and, in
+      curated corpora, the label itself.
+    fields: [created_at, updated_at, start_time, end_time, timestamp, first_seen, last_seen]
+  network_identifiers:
+    reason: >-
+      Addresses and ports encode the network topology of one deployment and
+      are the classic way an application label leaks into a feature.
+    fields: [source_ip, destination_ip, source_port, destination_port, spi, transport]
+  strings_with_label_content:
+    reason: >-
+      Free-form text can contain the application name ("https", "sip"),
+      a filename, or a source path.
+    fields: [protocol, title, description, filename, path, user_agent, category]
+  phase2_non_vector_fields:
+    reason: >-
+      `packet_size_histogram` is an array of buckets already summarised by the
+      packet_size_* features; it is not a scalar ML input at schema 1.0.
+    fields: [packet_size_histogram]
+  post_phase3_fields:
+    reason: >-
+      Security findings are Phase 3 outputs. Feeding them to a traffic classifier
+      would let the ML model inherit deterministic rule results as features.
+    fields: [severity, finding_type, rule_id, evidence_digest]
+
+# ---------------------------------------------------------------------------
+# Preprocessing
+# ---------------------------------------------------------------------------
+# Applied identically at training and inference time. The fitted
+# ColumnTransformer is serialized inside the model artifact, so inference can
+# never diverge from training.
+preprocessing:
+  version: "1.0"
+  numeric:
+    # Median keeps a single pathological flow from dragging the whole column.
+    imputer_strategy: median
+    # One binary column per numeric feature marking "was not computable".
+    # This is what keeps UNKNOWN distinguishable from a real 0.0.
+    add_missing_indicator: true
+    scaler: standard
+  categorical:
+    imputer_strategy: most_frequent
+    # An unseen category at inference maps to this token instead of raising.
+    unknown_token: __UNKNOWN__
+  target_encoding: none
+  # Rows failing validation are rejected by the builder, never repaired here.
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+dataset:
+  # Splitting is by capture, never by flow. Two flows from one capture are
+  # statistically dependent; splitting them leaks the capture into both
+  # train and test. See docs/ml-dataset-plan.md.
+  split_unit: capture
+  train_ratio: 0.7
+  validation_ratio: 0.15
+  test_ratio: 0.15
+  random_seed: 42
+  min_total_samples: 40
+  min_samples_per_class: 2
+  min_captures_per_split: 1
+  # Below this, metrics are not reported at all — the artifact records
+  # INSUFFICIENT_DATA instead of publishing noise.
+  min_samples_for_metrics: 20

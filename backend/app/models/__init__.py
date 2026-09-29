@@ -14,6 +14,7 @@ from app.models.ipsec_packet import AhPacket, EspPacket
 from app.models.mixins import TimestampMixin, uuid_str
 from app.models.protocol_observation import ProtocolObservation
 from app.models.report import Report, ReportStatus, ReportType
+from app.models.traffic_prediction import ObservationStatus, TrafficPrediction, TrafficType
 
 __all__ = [
     "AhPacket",
@@ -32,6 +33,7 @@ __all__ = [
     "IkeProposal",
     "JobStage",
     "JobStatus",
+    "ObservationStatus",
     "ProtocolObservation",
     "Report",
     "ReportStatus",
@@ -39,5 +41,7 @@ __all__ = [
     "SecurityFinding",
     "Severity",
     "TimestampMixin",
+    "TrafficPrediction",
+    "TrafficType",
     "uuid_str",
 ]

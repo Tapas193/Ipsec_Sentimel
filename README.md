@@ -7,8 +7,8 @@ Problem statement ID: **26160**.
 IPsec Sentinel is a cybersecurity platform that analyzes IPsec VPN packet
 captures, detects protocol misconfigurations, and produces security
 assessments. This repository currently contains **Phase 1 — the foundation**,
-**Phase 2 — packet analysis**, and **Phase 3 — deterministic security
-assessment**:
+**Phase 2 — packet analysis**, **Phase 3 — deterministic security assessment**,
+and **Phase 4 — AI/ML-assisted analysis**:
 
 - **Phase 1**: full-stack skeleton, database schema, a real REST API, a
   professional dark cybersecurity dashboard, and containerized deployment.
@@ -21,13 +21,27 @@ assessment**:
   `SecurityFinding` records — `POST /analyses/{key}/assess`, idempotent
   findings APIs, and a React **Security** tab with severity counts and
   expandable evidence.
+- **Phase 4**: a CPU-only scikit-learn traffic classifier with a versioned,
+  reproducible artifact registry — a 27-feature schema contract, capture-level
+  splitting, confidence **abstention** (`UNKNOWN`), `TrafficPrediction`
+  persistence keyed by `(flow_id, model_version)`, 13 `/api/v1/ml` endpoints, and
+  a React **Traffic Intelligence** page plus a per-analysis **Predictions** tab.
+  Training is explicit and gated, and **refuses with no artifact** when no
+  ground-truth labels exist — which is the shipped state, because this
+  repository contains no ground truth.
 
 > ⚠️ **Honest scope warning:** Phases 1–3 implement *no* AI/ML, no global
 > security score, no recommendations, no live capture, and no report
-> generation. Every value reported by the API and dashboard is derived from
-> **real parsed packets** — nothing is fabricated, and undecodable values are
-> shown as `unknown` / `UNKNOWN` (never silently classified as weak or
-> strong). These remaining capabilities are planned and tracked in
+> generation. Phase 4 adds **real** ML — but it ships **without a model**, because
+> this repository contains no operator-supplied ground truth, so training
+> correctly returns `INSUFFICIENT_LABELED_DATA` and writes nothing. No accuracy
+> number anywhere describes real-world traffic. Every value reported by the API
+> and dashboard is derived from **real parsed packets** or an
+> **operator-supplied label file** — nothing is fabricated, undecodable values
+> are shown as `unknown` / `UNKNOWN` (never silently classified as weak or
+> strong), and a prediction below the confidence threshold is shown as
+> `UNKNOWN` with abstention recorded, never as a confident class. Remaining
+> capabilities are planned and tracked in
 > [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 ## What IPsec Sentinel is
@@ -38,8 +52,10 @@ assessment**:
   best practices to surface findings with severity and confidence
   (implemented in Phase 3: 10 deterministic rules, evidence-backed findings,
   idempotent assessment)
-- **AI-assisted** — machine learning will power confidence scoring, anomaly
-  detection, and summaries in later phases
+- **AI-assisted** — a CPU-only traffic classifier with confidence scoring and
+  abstention is implemented in Phase 4; it ships inert (no model) until an
+  operator supplies ground truth. Anomaly detection and summaries remain later
+  phases
 - **Reporting** — generates executive, technical, and JSON reports (future phases)
 
 ## Technology stack
@@ -189,6 +205,26 @@ Phase 3 deterministic security assessment:
 - `GET /api/v1/analyses/{key}/findings/{SEC-…}` — single finding with
   machine-readable evidence
 
+Phase 4 ML (every unavailability state is **HTTP 200** with an explicit status):
+
+- `GET /api/v1/ml/health` · `/schema` · `/features` — readiness and the
+  27-feature contract
+- `GET /api/v1/ml/models` · `/models/{version}` · `/models/{version}/metrics` —
+  artifact registry and held-out metrics (explicitly `null` below the sample
+  floor)
+- `GET /api/v1/ml/dataset` — label coverage / split dry-run, fits nothing
+- `POST /api/v1/ml/train` — explicit and gated; returns
+  `INSUFFICIENT_LABELED_DATA` and writes no artifact when no labels exist
+- `POST /api/v1/ml/analyses/{key}/predict` — run inference, persisted
+  idempotently on `(flow_id, model_version)`
+- `GET`/`DELETE /api/v1/ml/analyses/{key}/predictions` — stored predictions
+- `GET /api/v1/ml/predictions` · `/flows/{flow_uuid}/prediction` — history and
+  per-flow lookup
+
+ML output is stored in `TrafficPrediction` with observation status
+`model_predicted`. It is **advisory and never a security claim**: it does not
+create findings, set severity, or affect any risk score.
+
 ## Docs
 
 - [`docs/architecture.md`](docs/architecture.md) — system design
@@ -196,10 +232,17 @@ Phase 3 deterministic security assessment:
 - [`docs/security-assessment.md`](docs/security-assessment.md) — Phase 3 engine design
 - [`docs/security-rules.md`](docs/security-rules.md) — the 10-rule catalogue
 - [`docs/phase-3-report.md`](docs/phase-3-report.md) — Phase 3 final report
+- [`docs/phase-4-architecture.md`](docs/phase-4-architecture.md) — Phase 4 design & data path
+- [`docs/ml-dataset-plan.md`](docs/ml-dataset-plan.md) — ground truth, splitting, sample floors
+- [`docs/ml-reproducibility.md`](docs/ml-reproducibility.md) — artifacts, determinism, evaluation
+- [`docs/ml-security.md`](docs/ml-security.md) — threat model, controls, residual pickle risk
+- [`docs/ml-api.md`](docs/ml-api.md) — Phase 4 API reference
+- [`docs/phase-4-report.md`](docs/phase-4-report.md) — Phase 4 final report
 - [`backend/docs/packet-analysis.md`](backend/docs/packet-analysis.md) — analysis pipeline
 - [`backend/docs/pcap-format.md`](backend/docs/pcap-format.md) — supported formats
 - [`backend/docs/testing.md`](backend/docs/testing.md) — test & verification guide
-- [`configs/feature_schema.yaml`](configs/feature_schema.yaml) — feature schema
+- [`configs/feature_schema.yaml`](configs/feature_schema.yaml) — Phase 2 feature schema
+- [`configs/ml_feature_schema.yaml`](configs/ml_feature_schema.yaml) — Phase 4 ML feature contract
 
 ## License
 

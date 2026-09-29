@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   BarChart3,
   Boxes,
+  BrainCircuit,
   Download,
   FileCog,
   FlaskConical,
@@ -14,28 +15,40 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react'
 
 import { EmptyState } from '@/components/empty-state'
 import { ErrorCard, LoadingCard } from '@/components/feedback'
+import {
+  MLPredictionStats,
+  MLPredictionsTable,
+  MLStateCard,
+  MLUnavailableCard,
+} from '@/components/ml-predictions'
 import { SecurityFindingsTable, SeverityStat } from '@/components/security-findings'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { apiClient } from '@/lib/api-client'
+import { ApiClientError, apiClient } from '@/lib/api-client'
 import {
   useAhPacketsQuery,
   useAnalysisQuery,
   useAssessMutation,
+  useDeletePredictionsMutation,
   useEspPacketsQuery,
   useFindingsQuery,
   useFlowFeaturesQuery,
   useFlowsQuery,
   useIkeMessagesQuery,
+  useMLHealthQuery,
+  useMLPredictionsQuery,
   useProtocolObservationsQuery,
+  useRunPredictionMutation,
 } from '@/hooks/use-api'
 import { countBySeverity } from '@/lib/findings'
+import { formatConfidence, mlStatusExplanation } from '@/lib/ml'
 import {
   formatBytes,
   formatDateTime,
@@ -55,6 +68,7 @@ const TABS = [
   { id: 'flows', label: 'Flows', icon: ArrowLeft },
   { id: 'features', label: 'Features', icon: FileCog },
   { id: 'security', label: 'Security', icon: ShieldCheck },
+  { id: 'ml', label: 'ML', icon: BrainCircuit },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -199,6 +213,8 @@ function TabContent({
       return <FeaturesTab analysisKey={analysisKey} />
     case 'security':
       return <SecurityTab analysisKey={analysisKey} summary={summary} />
+    case 'ml':
+      return <MLTab analysisKey={analysisKey} />
   }
 }
 
@@ -663,6 +679,187 @@ function SecurityTab({
 
 
 
+
+/**
+ * Phase 4 ML section.
+ *
+ * Deliberately read-mostly: this tab shows the stored predictions for one
+ * analysis and can trigger an inference run, but it never trains, never edits
+ * labels, and never writes a finding. The honest "nothing here" states — ML
+ * disabled, no model registered, and no flow features — are each rendered as an
+ * explained panel rather than an empty table or a failure banner, because in
+ * this repository all three are the expected state.
+ */
+function MLTab({ analysisKey }: { analysisKey: string }) {
+  const health = useMLHealthQuery()
+  const run = useRunPredictionMutation()
+  const clear = useDeletePredictionsMutation()
+  const predictions = useMLPredictionsQuery(analysisKey)
+
+  const mlEnabled = health.data?.ml_enabled ?? false
+  const modelVersion = health.data?.active_model_version ?? null
+  const runResult = run.data
+  const rows = predictions.data?.predictions ?? []
+  const canRun = mlEnabled && modelVersion !== null && health.data?.any_model_available === true
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BrainCircuit className="h-4 w-4 text-brand" /> Traffic classification
+              </CardTitle>
+              <CardDescription>
+                Supervised flow labels from the Phase 4 model. These are informational only: they
+                do not create findings and do not alter risk level or security score.
+              </CardDescription>
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => run.mutate({ analysisKey, modelVersion: modelVersion ?? undefined })}
+                  disabled={!canRun || run.isPending}
+                >
+                  {run.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Run inference
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => clear.mutate(analysisKey)}
+                  disabled={clear.isPending || rows.length === 0}
+                >
+                  {clear.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  Clear
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {modelVersion
+                  ? `Model ${modelVersion} · threshold ${formatConfidence(health.data?.min_confidence ?? null)}`
+                  : 'No compatible model is registered'}
+              </p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {run.isError ? (
+            <ErrorCard
+              message={
+                run.error instanceof ApiClientError
+                  ? `${run.error.message} (${run.error.code})`
+                  : 'Inference failed.'
+              }
+            />
+          ) : null}
+          {runResult ? (
+            <div className="space-y-1.5 rounded-md border border-border bg-secondary/30 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge value={runResult.status} kind="ml" />
+                <span className="text-sm text-foreground">
+                  {runResult.created} created · {runResult.updated} updated · {runResult.rejected}{' '}
+                  rejected of {runResult.total} flows
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {mlStatusExplanation(runResult.status)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Stored as <span className="font-mono">{runResult.observation_status}</span>{' '}
+                observations. Re-running updates rows in place.
+              </p>
+            </div>
+          ) : null}
+          {clear.data ? (
+            <p className="text-xs text-muted-foreground">
+              {clear.data.deleted} stored prediction row(s) removed.
+            </p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {!mlEnabled ? (
+        <MLStateCard
+          status="DISABLED"
+          title="Traffic classification is disabled"
+          action={
+            <p className="text-xs text-muted-foreground">
+              Set <span className="font-mono">ML_ENABLED=true</span> on the backend to enable
+              inference for this analysis.
+            </p>
+          }
+        />
+      ) : null}
+
+      {mlEnabled && !modelVersion ? (
+        <MLUnavailableCard status="MODEL_NOT_AVAILABLE" detail={health.data?.detail ?? null} />
+      ) : null}
+
+      {predictions.data?.status === 'INSUFFICIENT_DATA' ? (
+        <MLStateCard
+          status="INSUFFICIENT_DATA"
+          title="No flow features to score"
+          action={
+            <p className="text-xs text-muted-foreground">
+              This analysis produced no flow features, so there is nothing for a model to classify.
+            </p>
+          }
+        />
+      ) : null}
+
+      {predictions.isPending ? <LoadingCard /> : null}
+      {predictions.isError ? (
+        <ErrorCard message="Stored ML predictions could not be loaded." />
+      ) : null}
+
+      {rows.length > 0 ? (
+        <>
+          <MLPredictionStats summary={predictions.data?.summary ?? FALLBACK_SUMMARY} />
+          <MLPredictionsTable rows={rows} />
+        </>
+      ) : null}
+
+      {mlEnabled &&
+      modelVersion &&
+      rows.length === 0 &&
+      !predictions.isPending &&
+      !predictions.isError &&
+      predictions.data?.status !== 'INSUFFICIENT_DATA' ? (
+        <EmptyState
+          icon={BrainCircuit}
+          title="No predictions for this analysis"
+          description="Nothing has been scored yet. Running inference classifies this analysis's flows using the active model and stores the results here."
+          action={
+            <p className="text-xs text-muted-foreground">
+              Training happens on the server and requires ground-truth labels supplied by an
+              operator. This project ships no pre-trained model.
+            </p>
+          }
+        />
+      ) : null}
+    </div>
+  )
+}
+
+const FALLBACK_SUMMARY = {
+  count: 0,
+  model_version: null,
+  average_confidence: null,
+  unknown_count: 0,
+  abstained_count: 0,
+  low_confidence_count: 0,
+  class_distribution: {},
+}
 
 function EmptyTable({ title }: { title: string }) {
   return (

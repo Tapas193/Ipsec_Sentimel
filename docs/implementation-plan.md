@@ -171,20 +171,108 @@ no AI/ML (Phase 4), no decryption, no global security score (Phase 5).
 - Replay and "IKE may be incomplete" rules are deliberately conservative
   (normal reordering / partial captures are consistent with the observation)
 
-## Phase 4 — AI/ML-assisted analysis (planned)
+## Phase 4 — AI/ML-assisted analysis (implemented)
 
-Constraints fixed at design time: **CPU-only, no GPU/CUDA**, arm64-compatible,
-memory-bounded for an M2 (single-digit-GiB working set, small models).
+**Goal:** a real, versioned, reproducible CPU-only traffic classifier over
+persisted Phase 2 features — with abstention, and with the training path closed
+until an operator supplies ground truth.
 
-- Feature extraction from parsed flows (already persisted in `flow_features`)
-- Offline/online ML models (model versioning on `analyses` already reserved:
-  `analyzer_version`, `model_version`, `rule_version`, `dataset_version`)
-- Model runtime candidates are CPU-first: ONNX Runtime (CPU EP), llama.cpp,
-  scikit-learn — all ship `linux/arm64` + macOS `arm64`
-- Confidence scoring and risk-level determination
-- Summarization into `analyses.summarization_json`
-- Findings produced this way must carry observation status
-  `MODEL_PREDICTED` (reserved, unused by the Phase 3 engine)
+Constraints honoured: **CPU-only, no GPU/CUDA**, arm64-compatible,
+memory-bounded for an M2 (`ML_MAX_TRAINING_FLOWS=200000`).
+
+### Feature contract
+- [x] `configs/ml_feature_schema.yaml` — 27 approved features, `schema 1.0`,
+      units/bounds/nullability per feature, declared class vocabulary
+- [x] **Exclusion set with reasons** (identifiers, timestamps, network
+      identifiers, label-bearing strings, `packet_size_histogram`, Phase 3
+      outputs) — asserted at load, never intersected by a feature
+- [x] `null` is "not computable", never zero; out-of-range is **rejected**,
+      never clipped
+- [x] Capture-level splitting (`splitter.py`, `assert_no_capture_leakage`) —
+      flows from one capture are dependent, so the split unit is the capture
+- [x] Sample floors: `min_total_samples=40`, `min_samples_per_class=2`,
+      `min_captures_per_split=1`, `min_samples_for_metrics=20`; below the last
+      the artifact records `INSUFFICIENT_DATA` and the metric block is **absent**
+
+### Labels (the honesty boundary)
+- [x] `ML_LABEL_FILE` is the only label source; `label_source` must be
+      `user_provided`; match by `capture_id` or `capture_sha256`; provenance
+      recorded as `USER_PROVIDED`
+- [x] Forbidden sources rejected: port/filename/protocol heuristics, synthetic
+      PCAP generation, model self-labelling, Phase 3 finding derivation
+- [x] `POST /ml/train` with no labels returns HTTP 200
+      `INSUFFICIENT_LABELED_DATA`, `trained=false`, **no fit, no artifact** —
+      the shipped state of this repository, asserted by tests
+
+### Backend
+- [x] `app.ml` package (13 modules, 2533 lines): `schema`, `statuses`,
+      `validation`, `labels`, `dataset`, `splitter`, `preprocessing`, `baseline`
+      (`RandomForestClassifier`, `class_weight="balanced"`, no oversampling),
+      `metrics`, `trainer`, `artifacts`, `predictor`
+- [x] Versioned artifact registry — `model.joblib` + `metadata.json` +
+      `evaluation.json` per version; artifacts are **build outputs**, gitignored,
+      reproduced by re-running the trainer; `library_versions` + `dataset_digest`
+      recorded
+- [x] `predictor.py` — schema-compatibility check **before** scoring, fitted
+      preprocessor serialised inside the model, confidence threshold read from
+      `ML_MIN_CONFIDENCE` (0.60) and stored per prediction row
+- [x] **Abstention** — below threshold: `prediction=UNKNOWN`,
+      `abstained=true`, `top_candidate` retained, `observation_status` stays
+      `MODEL_PREDICTED`
+- [x] `TrafficPrediction` model — `PRED-######` ids, full `probabilities`
+      vector, `min_confidence_threshold`, unique `(flow_id, model_version)`
+      idempotency key
+- [x] `ml_service.py` (804 lines) — health, dataset report, training,
+      idempotent inference, listing, deletion
+- [x] 13 endpoints under `/api/v1/ml`; **unavailability is HTTP 200** with an
+      explicit status (`DISABLED` / `MODEL_NOT_AVAILABLE` / `INSUFFICIENT_DATA`)
+      so the UI renders an empty state, not a failure banner
+- [x] ML never writes a `SecurityFinding` and never influences severity, risk or
+      score — asserted against the DB in `TestPhase3Isolation`
+- [x] Alembic migration `d5a1b8f3c204` (new table + native PG enum + indexes) —
+      **upgrade/downgrade/upgrade round-trip verified on SQLite *and*
+      PostgreSQL 5433**, and `alembic check` reports no drift
+
+### Frontend
+- [x] **Traffic Intelligence** page (`/traffic`): health, model registry with
+      held-out metrics + confusion matrix, dataset coverage panel, feature
+      table
+- [x] Analysis detail **Predictions** tab: run inference, summary cards
+      (total / abstained / unknown / average confidence), per-flow rows with the
+      probability vector, delete action
+- [x] `UNKNOWN`/abstained rows labelled as such, never rendered as a confident
+      class; sidebar + header Phase 4 labelling
+
+### Phase 4 verification evidence
+- [x] pytest **255 passed** overall; `test_ml_pipeline.py` 84,
+      `test_ml_api.py` 47
+- [x] `ruff check` / `ruff format --check` clean (113 files); `mypy app tests`
+      clean (113 files); frontend `typecheck`/`lint`/`build` green
+- [x] Live API verification: no-label refusal, `/dataset` audit, gated training
+      disabled, schema-mismatch refusal, idempotent re-run
+      (`created=0, updated=12`), abstention, 404 paths, traversal attempt
+- [x] Docs: `docs/phase-4-architecture.md`, `docs/ml-dataset-plan.md`,
+      `docs/ml-reproducibility.md`, `docs/ml-security.md`, `docs/ml-api.md`,
+      `docs/phase-4-report.md`
+
+### Phase 4 known limitations — reported honestly
+- **No model ships.** There is no ground truth in this repository, so
+  `POST /ml/train` refuses and the Traffic page shows `MODEL_NOT_AVAILABLE`. That
+  is the correct, tested behaviour — not a missing feature.
+- **No real-world accuracy claim exists.** Test fixtures fit real models through
+  the real trainer to exercise mechanics (refusal, splitting, idempotency,
+  abstention); they assert no accuracy. The perfect scores those fixtures produce
+  are an artifact of the generator separating classes by a fixed offset.
+- `joblib.load` executes pickle: a model file in `ML_MODEL_DIR` is trusted by
+  definition. Mitigations remove traversal and API-supplied paths but cannot make
+  an untrusted pickle safe (`docs/ml-security.md` §4)
+- `analyses.summarization_json` is still **empty** — summarisation needs a
+  language model and real content, and is not attempted
+- No ONNX/llama.cpp runtime: the plan named them as candidates; scikit-learn is
+  the smallest thing satisfying CPU-only + arm64, so a model-format swap would
+  need artifact-format work
+- Confidence is **not** a risk level and **not** a security score. Those are
+  Phase 5
 
 ## Phase 5 — Reporting & scoring (planned)
 

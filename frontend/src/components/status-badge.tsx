@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import { mlStatusTone } from '@/lib/ml'
 
 type Tone = 'success' | 'warning' | 'danger' | 'info' | 'secondary'
 
@@ -52,10 +53,16 @@ const TONE_BY_CONFIDENCE: Record<string, Tone> = {
   unknown: 'secondary',
 }
 
-function toneFor(value: string, kind: 'status' | 'severity' | 'confidence'): Tone {
+function toneFor(
+  value: string,
+  kind: 'status' | 'severity' | 'confidence' | 'ml',
+): Tone {
   const key = value.toLowerCase()
   if (kind === 'severity') return TONE_BY_SEVERITY[key] ?? 'secondary'
   if (kind === 'confidence') return TONE_BY_CONFIDENCE[key] ?? 'secondary'
+  // ML statuses are SCREAMING_SNAKE and already have their own partition in
+  // `lib/ml`, so they are routed there rather than through the lowercase maps.
+  if (kind === 'ml') return mlStatusTone(value)
   return TONE_BY_STATUS[key] ?? 'secondary'
 }
 
@@ -64,7 +71,7 @@ export function StatusBadge({
   kind = 'status',
 }: {
   value: string | null | undefined
-  kind?: 'status' | 'severity' | 'confidence'
+  kind?: 'status' | 'severity' | 'confidence' | 'ml'
 }) {
   if (!value) {
     return <Badge variant="outline">unknown</Badge>

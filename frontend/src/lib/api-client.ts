@@ -14,12 +14,26 @@ import type {
   FlowFeatures,
   HealthData,
   IkeMessage,
+  MLDatasetReport,
+  MLFeatureList,
+  MLHealth,
+  MLModel,
+  MLModelList,
+  MLModelMetrics,
+  MLSchema,
+  MLTrainingRequest,
+  MLTrainingResult,
   PaginatedData,
+  PredictionDeleteResult,
+  PredictionHistory,
+  PredictionList,
+  PredictionRun,
   ProtocolObservation,
   SecurityFinding,
   SystemInfoData,
   ToolStatus,
   ToolsData,
+  TrafficPrediction,
 } from '@/types/api'
 
 export class ApiClientError extends Error {
@@ -72,8 +86,11 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return envelope.data
 }
 
-async function post<T>(path: string): Promise<T> {
-  const envelope = await request<T>(path, { method: 'POST' })
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const envelope = await request<T>(path, {
+    method: 'POST',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
   if (envelope.data === null) {
     throw new ApiClientError(200, envelope.error, 'Request returned no data')
   }
@@ -193,6 +210,48 @@ export const apiClient = {
     get<PaginatedData<SecurityFinding>>(`/findings?page=${page}&page_size=${pageSize}`, signal),
   assessAnalysis: (analysisKey: string) =>
     post<AssessmentResult>(`/analyses/${analysisKey}/assess`),
+
+  // Phase 4 — ML / traffic classification
+  //
+  // These return HTTP 200 for "no model", "not enough data" and "training
+  // disabled". The client must not translate those into thrown errors, and the
+  // hooks must not gate rendering on a model being present.
+  mlHealth: (signal?: AbortSignal) => get<MLHealth>('/ml/health', signal),
+  mlSchema: (signal?: AbortSignal) => get<MLSchema>('/ml/schema', signal),
+  mlFeatures: (signal?: AbortSignal) => get<MLFeatureList>('/ml/features', signal),
+  listModels: (signal?: AbortSignal) => get<MLModelList>('/ml/models', signal),
+  getModel: (modelVersion: string, signal?: AbortSignal) =>
+    get<MLModel>(`/ml/models/${encodeURIComponent(modelVersion)}`, signal),
+  getModelMetrics: (modelVersion: string, signal?: AbortSignal) =>
+    get<MLModelMetrics>(`/ml/models/${encodeURIComponent(modelVersion)}/metrics`, signal),
+  mlDataset: (signal?: AbortSignal) => get<MLDatasetReport>('/ml/dataset', signal),
+  trainModel: (body?: MLTrainingRequest) => post<MLTrainingResult>('/ml/train', body ?? {}),
+  runPrediction: (analysisKey: string, modelVersion?: string) =>
+    post<PredictionRun>(
+      `/ml/analyses/${analysisKey}/predict${
+        modelVersion ? `?model_version=${encodeURIComponent(modelVersion)}` : ''
+      }`,
+    ),
+  listPredictions: (analysisKey: string, modelVersion?: string, signal?: AbortSignal) =>
+    get<PredictionList>(
+      `/ml/analyses/${analysisKey}/predictions${
+        modelVersion ? `?model_version=${encodeURIComponent(modelVersion)}` : ''
+      }`,
+      signal,
+    ),
+  deletePredictions: (analysisKey: string) =>
+    remove<PredictionDeleteResult>(`/ml/analyses/${analysisKey}/predictions`),
+  predictionHistory: (
+    captureId: string | undefined,
+    limit = 50,
+    signal?: AbortSignal,
+  ): Promise<PredictionHistory> => {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (captureId) params.set('capture_id', captureId)
+    return get<PredictionHistory>(`/ml/predictions?${params.toString()}`, signal)
+  },
+  flowPrediction: (flowUuid: string, signal?: AbortSignal) =>
+    get<TrafficPrediction>(`/ml/flows/${encodeURIComponent(flowUuid)}/prediction`, signal),
 
   // Export URLs
   exportUrl: (analysisKey: string, resource: 'flows' | 'ike' | 'esp' | 'features') =>

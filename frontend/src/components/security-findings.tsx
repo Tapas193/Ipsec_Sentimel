@@ -15,7 +15,8 @@ export function SeverityStat({
   variant = 'secondary',
 }: {
   label: string
-  value: number
+  /** String values are used when the value is a formatted non-count, e.g. a percentage. */
+  value: number | string
   variant?: 'danger' | 'warning' | 'info' | 'secondary'
 }) {
   return (
@@ -24,7 +25,8 @@ export function SeverityStat({
         <span className="text-sm text-muted-foreground">{label}</span>
         <span
           className={cn(
-            'text-lg font-bold tabular-nums',
+            typeof value === 'number' ? 'text-lg tabular-nums' : 'text-sm',
+            'font-bold',
             variant === 'danger' && 'text-status-danger',
             variant === 'warning' && 'text-status-warning',
             variant === 'info' && 'text-status-info',

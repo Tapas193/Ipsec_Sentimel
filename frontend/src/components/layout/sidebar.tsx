@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
+  BrainCircuit,
   FileText,
   FlaskConical,
   LayoutDashboard,
@@ -17,6 +18,7 @@ const navItems = [
   { to: '/captures', label: 'Captures', icon: FlaskConical },
   { to: '/analysis', label: 'Analysis', icon: BarChart3 },
   { to: '/findings', label: 'Findings', icon: TriangleAlert },
+  { to: '/traffic', label: 'Traffic Intelligence', icon: BrainCircuit },
   { to: '/reports', label: 'Reports', icon: FileText },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
@@ -58,12 +60,12 @@ export function Sidebar() {
       <div className="border-t border-border p-4">
         <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2.5">
           <Activity className="h-4 w-4 text-status-success" />
-<div className="text-[11px] leading-tight text-muted-foreground">
-          <p className="font-medium text-foreground">Phase 1</p>
-          <p>Foundation only</p>
+          <div className="text-[11px] leading-tight text-muted-foreground">
+            <p className="font-medium text-foreground">Phase 4</p>
+            <p>ML traffic classification</p>
+          </div>
         </div>
       </div>
-    </div>
-  </aside>
-)
+    </aside>
+  )
 }

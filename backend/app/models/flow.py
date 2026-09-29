@@ -62,6 +62,12 @@ class Flow(Base, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    traffic_predictions = relationship(
+        "TrafficPrediction",
+        back_populates="flow",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class FlowFeatures(Base, TimestampMixin):

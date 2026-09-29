@@ -331,6 +331,259 @@ export interface AssessmentResult {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 4 — ML / traffic classification
+//
+// Every ML response carries an explicit `status`. The ML statuses are *not*
+// error states: "no model has been trained yet" is a normal, expected state of
+// a system that has no ground truth. The UI renders them as information.
+// ---------------------------------------------------------------------------
+
+export type MLHealthStatus = 'DISABLED' | 'MODEL_NOT_AVAILABLE' | 'OK'
+
+export type MLRunStatus = 'OK' | 'MODEL_NOT_AVAILABLE' | 'INSUFFICIENT_DATA' | 'DISABLED'
+
+export type MLTrainStatus =
+  | 'OK'
+  | 'INSUFFICIENT_LABELED_DATA'
+  | 'INSUFFICIENT_DATA'
+  | 'DISABLED'
+  | 'NO_LABELS_REGISTERED'
+  | 'LABEL_FILE_UNREADABLE'
+  | 'FAILED'
+
+/**
+ * ML status tone map. Kept distinct from `TONE_BY_STATUS`/`TONE_BY_SEVERITY`/
+ * `TONE_BY_CONFIDENCE` in status-badge.tsx so an ML state can never inherit
+ * another domain's colours by accident.
+ */
+export type MLStatusTone = 'success' | 'warning' | 'info' | 'secondary' | 'danger'
+
+export interface MLFeatureDefinition {
+  name: string
+  type: string
+  unit: string | null
+  nullable: boolean
+  minimum: number | null
+  maximum: number | null
+}
+
+export interface MLFeatureList {
+  feature_schema_version: string
+  dataset_version: string
+  feature_count: number
+  features: MLFeatureDefinition[]
+  excluded_features: string[]
+  classes: string[]
+  min_confidence: number
+}
+
+export interface MLSchema {
+  feature_schema_version: string
+  dataset_version: string
+  features: MLFeatureDefinition[]
+  excluded_features: string[]
+  /** feature name -> why it is excluded. */
+  exclusions: Record<string, string>
+  classes: string[]
+  split: Record<string, unknown>
+  preprocessing: Record<string, unknown>
+}
+
+/**
+ * Why no model is available, already phrased for display. `remediation` is the
+ * backend's own suggested next step, so the UI never has to invent advice.
+ */
+export interface MLUnavailableDetail {
+  reason: string
+  required_feature_schema_version: string | null
+  configured_model_version: string | null
+  registered_model_versions: string[]
+  remediation: string
+}
+
+export interface MLHealth {
+  ml_enabled: boolean
+  training_enabled: boolean
+  any_model_available: boolean
+  active_model_version: string | null
+  feature_schema_version: string
+  dataset_version: string
+  min_confidence: number
+  class_count: number
+  models: string[]
+  detail: MLUnavailableDetail | null
+}
+
+/**
+ * Held-out metrics. A `null` field means *not computed* — never *computed as
+ * zero*. The UI renders "not measured" rather than a number for nulls.
+ */
+export interface MLMetrics {
+  accuracy: number | null
+  precision_macro: number | null
+  recall_macro: number | null
+  f1_macro: number | null
+  per_class: Record<string, Record<string, number>>
+  confusion_matrix: number[][] | null
+  confusion_matrix_labels: string[]
+  mean_predicted_confidence: number | null
+  evaluated_samples: number | null
+  expected_calibration_error: number | null
+  abstention_rate: number | null
+}
+
+export interface MLModel {
+  model_version: string
+  model_type: string
+  feature_schema_version: string
+  dataset_version: string
+  created_at: string
+  classes: string[]
+  training_samples: number
+  feature_count: number
+  metrics: MLMetrics | null
+  /** Per-split row counts, keyed `train` / `validation` / `test`. */
+  splits: Record<string, number>
+  library_versions: Record<string, string>
+}
+
+export interface MLModelList {
+  total: number
+  active_model_version: string | null
+  models: MLModel[]
+}
+
+export interface MLModelMetrics {
+  model_version: string
+  metrics: MLMetrics | null
+  evaluated: boolean
+  note: string | null
+  min_confidence: number
+}
+
+export interface MLTrainingRequest {
+  model_version?: string
+  /** Server-side path only. The backend never fetches this over HTTP. */
+  label_file?: string
+  notes?: string
+}
+
+export interface MLTrainingResult {
+  status: MLTrainStatus
+  trained: boolean
+  message: string
+  model_version: string | null
+  feature_schema_version: string | null
+  dataset_version: string | null
+  training_samples: number
+  capture_count: number
+  splits: Record<string, number>
+  metrics: MLMetrics | null
+  classes: string[]
+  excluded_features: string[]
+  label_provenance: Record<string, number>
+  rejected_rows: number
+  rejection_reasons: Record<string, number>
+  library_versions: Record<string, string>
+  duration_seconds: number | null
+  created_at: string | null
+}
+
+/** Dry-run of the dataset builder: what training *would* see, without fitting. */
+export interface MLDatasetReport {
+  status: string
+  dataset_version: string
+  feature_schema_version: string
+  class_definition_version: string
+  dataset_digest: string | null
+  feature_names: string[]
+  feature_count: number
+  total_feature_rows: number
+  labeled_rows: number
+  unlabeled_rows: number
+  rejected_rows: number
+  rejection_reasons: Record<string, number>
+  capture_count: number
+  labeled_capture_count: number
+  class_distribution: Record<string, number>
+  label_registry_source: string
+  /** Echoed back so an operator can confirm the configured registry, never its contents. */
+  label_file: string | null
+  notes: string[]
+  split: Record<string, unknown> | null
+}
+
+export interface TrafficPrediction {
+  id: string
+  prediction_id: string | null
+  analysis_id: string
+  flow_id: string
+  capture_id: string | null
+  model_version: string
+  model_type: string | null
+  dataset_version: string | null
+  feature_schema_version: string
+  prediction: string
+  /** Runner-up class, retained even when the model abstains. */
+  top_candidate: string | null
+  confidence: number
+  min_confidence_threshold: number | null
+  abstained: boolean
+  probabilities: Record<string, number>
+  observation_status: string
+}
+
+export interface PredictionSummary {
+  count: number
+  model_version: string | null
+  average_confidence: number | null
+  unknown_count: number
+  abstained_count: number
+  low_confidence_count: number
+  class_distribution: Record<string, number>
+}
+
+export interface PredictionList {
+  status: MLRunStatus
+  analysis_id: string
+  model_version: string | null
+  summary: PredictionSummary
+  predictions: TrafficPrediction[]
+  observation_status: string
+  detail: MLUnavailableDetail | null
+  duration_seconds: number | null
+}
+
+/**
+ * `created` counts rows inserted, `updated` counts rows replaced via the
+ * (flow_id, model_version) idempotency key. Re-running never grows the table.
+ */
+export interface PredictionRun {
+  status: MLRunStatus
+  analysis_id: string
+  model_version: string | null
+  total: number
+  created: number
+  updated: number
+  rejected: number
+  rejection_reasons: Record<string, number>
+  observation_status: string
+  summary: PredictionSummary
+  detail: MLUnavailableDetail | null
+  duration_seconds: number | null
+  trained_at: string | null
+}
+
+export interface PredictionHistory {
+  total: number
+  predictions: TrafficPrediction[]
+}
+
+export interface PredictionDeleteResult {
+  deleted: number
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2 — System tools
 // ---------------------------------------------------------------------------
 

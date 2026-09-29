@@ -111,3 +111,9 @@ class Analysis(Base, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    traffic_predictions = relationship(
+        "TrafficPrediction",
+        back_populates="analysis",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
